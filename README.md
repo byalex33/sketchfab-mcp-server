@@ -1,108 +1,98 @@
 # Sketchfab MCP Server
 
-A Model Context Protocol (MCP) server for interacting with Sketchfab's 3D model platform. This MCP allows you to search, view details, and download 3D models from Sketchfab directly through Claude or Cursor.
+A Model Context Protocol (MCP) server for Sketchfab's 3D model platform. It lets Claude, Cursor or any MCP client search, inspect and download 3D models from Sketchfab.
 
 ## Features
 
-- **Search for 3D Models**: Find models on Sketchfab using keywords, tags, and categories
-- **View Model Details**: Get comprehensive information about specific models
-- **Download Models**: Download models in various formats (gltf, glb, usdz, source)
+- **Search** with filters for tags, categories, license, face count, animated, rigged, staff picks and sort order, with pagination.
+- **Model details** with creator, license, ready-to-use attribution text, geometry size, download size per format and a preview image.
+- **Category list** so the agent uses valid category slugs.
+- **Download** in gltf, glb, usdz or source. Files are streamed to disk, ZIP archives are extracted safely, and the main model file is reported.
+
+Search, details and categories work without an API key. Downloads need one.
 
 ## Prerequisites
 
-- Node.js 18 or higher
-- A Sketchfab API key (for authentication)
+- Node.js 20 or higher
+- A Sketchfab API key for downloads (find it at https://sketchfab.com/settings/password)
 
 ## Installation
 
-1. Clone this repository
-2. Install dependencies:
-   ```
-   npm install
-   ```
-3. Build the project:
-   ```
-   npm run build
-   ```
-
-## Usage
-
-### Running the MCP Server
-
-```
-npm start
+```bash
+npm install
+npm run build
 ```
 
-To provide your Sketchfab API key, use the `--api-key` parameter:
+## Configuration
 
-```
-node build/index.js --api-key YOUR_API_KEY
-```
+Set the key with the `SKETCHFAB_API_KEY` environment variable. This is preferred over `--api-key`, because command-line arguments are visible to other processes on the machine.
 
-Alternatively, you can set the `SKETCHFAB_API_KEY` environment variable:
-
-```
-export SKETCHFAB_API_KEY=YOUR_API_KEY
-npm start
-```
-
-### Available Tools
-
-#### 1. sketchfab-search
-
-Search for 3D models on Sketchfab based on keywords and filters.
-
-Parameters:
-- `query` (optional): Text search query (e.g., "car", "house", "character")
-- `tags` (optional): Filter by specific tags (e.g., ["animated", "rigged", "pbr"])
-- `categories` (optional): Filter by categories (e.g., ["characters", "architecture", "vehicles"])
-- `downloadable` (optional): Set to true to show only downloadable models
-- `limit` (optional): Maximum number of results to return (1-24, default: 10)
-
-#### 2. sketchfab-model-details
-
-Get detailed information about a specific Sketchfab model.
-
-Parameters:
-- `modelId`: The unique ID of the Sketchfab model
-
-#### 3. sketchfab-download
-
-Download a 3D model from Sketchfab.
-
-Parameters:
-- `modelId`: The unique ID of the Sketchfab model to download
-- `format` (optional): Preferred format to download the model in (gltf, glb, usdz, source)
-- `outputPath` (optional): Local directory or file path to save the downloaded file
-
-## Using with Cursor
-
-1. Go to Cursor Settings -> MCP -> Add new MCP server
-2. Configure your MCP:
-   - Name: Sketchfab MCP
-   - Type: command
-   - Command: `node /path/to/build/index.js --api-key YOUR_API_KEY`
-
-## Using with Claude Desktop
-
-Add the following MCP config to your Claude Desktop configuration:
+### Claude Desktop / Claude Code
 
 ```json
 {
   "mcpServers": {
     "sketchfab": {
       "command": "node",
-      "args": ["/path/to/build/index.js", "--api-key", "YOUR_API_KEY"]
+      "args": ["/path/to/sketchfab-mcp-server/build/index.js"],
+      "env": { "SKETCHFAB_API_KEY": "YOUR_API_KEY" }
     }
   }
 }
 ```
 
-## Environment Variables
+### Cursor
 
-You can set the following environment variables:
+Settings → MCP → Add new MCP server, type `command`, command `node /path/to/build/index.js`, and add `SKETCHFAB_API_KEY` to the environment.
 
-- `SKETCHFAB_API_KEY`: Your Sketchfab API key (alternative to passing it with the --api-key parameter)
+`--api-key YOUR_API_KEY` and `--api-key=YOUR_API_KEY` still work.
+
+## Tools
+
+### `sketchfab-search`
+
+| Parameter | Type | Notes |
+| --- | --- | --- |
+| `query` | string | Free text, e.g. `"low poly car"` |
+| `tags` | string[] | Tag slugs, e.g. `["rigged", "pbr"]` |
+| `categories` | string[] | Category slugs from `sketchfab-list-categories`, e.g. `["cars-vehicles"]` |
+| `downloadable`, `animated`, `rigged`, `staffpicked` | boolean | Filters |
+| `license` | enum | `cc0`, `by`, `by-sa`, `by-nd`, `by-nc`, `by-nc-sa`, `by-nc-nd`, `free-st`, `st`, `ed` |
+| `minFaceCount`, `maxFaceCount` | integer | Geometry budget |
+| `sortBy` | enum | `-likeCount`, `-viewCount`, `-publishedAt`, `-processedAt` (default: relevance) |
+| `limit` | 1–24 | Default 10 |
+| `cursor` | string | From the previous result, for the next page |
+| `includeThumbnails` | boolean | Adds a preview image per hit (default false) |
+
+At least one of `query`, `tags`, `categories` or `cursor` is required.
+
+### `sketchfab-model-details`
+
+- `modelId`: a model ID or a full sketchfab.com model URL
+- `includeThumbnail` (default true)
+
+### `sketchfab-list-categories`
+
+No parameters.
+
+### `sketchfab-download`
+
+- `modelId`: a model ID or URL (the model must be downloadable)
+- `format`: `gltf` (default, ZIP with textures), `glb` (single file), `usdz`, `source`. If the format is not offered, the server falls back to glb → gltf → usdz → source and says so.
+- `outputPath`: a directory (existing, ending in `/`, or with no extension) or an exact file path. Missing folders are created. Default: `<os temp>/sketchfab-mcp`.
+
+The result includes the license and an attribution line. Respect the model's license when you use it.
+
+All tools return `structuredContent` alongside text, and errors are flagged with `isError`.
+
+## Development
+
+```bash
+npm run dev        # run from source with tsx
+npm test           # vitest
+npm run lint
+npm run typecheck
+```
 
 ## License
 
